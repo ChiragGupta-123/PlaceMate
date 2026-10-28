@@ -19,6 +19,19 @@ NOTE: The parser is a **correctness** defense, not a security boundary.
 The sandbox is the security boundary.
 
 NEVER run the generated harness locally.  It is sent only to the sandbox.
+
+BUG FIXES IN THIS VERSION
+──────────────────────────
+B1  _ALL_TESTS was double-encoded (json.dumps(json.dumps(...))).  Now single.
+B2  _timeout_s was computed but never used.  Now drives signal.setitimer.
+B8  $range/$repeat DSL is embedded raw and expanded inside the sandbox,
+    keeping the script < 20 KB instead of ~694 KB.
+B9  exec(_compiled, {}) passed an empty namespace; candidate code that
+    relies on preamble builtins (math, collections, …) would NameError.
+    Now seeded with all preamble names.
+C4  Per-test signal.SIGALRM timer via signal.setitimer with a custom
+    TestTimeoutError(BaseException) subclass.  Reset in finally.
+    Guarded with hasattr(signal, 'setitimer') for Windows sandbox compat.
 """
 
 from __future__ import annotations
@@ -29,7 +42,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from app.schemas.problem import Comparator, ProblemSpec
+from app.schemas.problem import ProblemSpec
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +63,9 @@ def build_harness(source: str, problem: ProblemSpec, nonce: str) -> str:
     if problem.perf_test:
         layout.append({"kind": "perf", "timeout_ms": problem.perf_test.timeout_ms})
 
-    # Build all test cases as a JSON list of {args, expected, kind}
+    # Build all test cases as a JSON list of {args, expected, kind, timeout_ms}.
+    # B8: args/expected are embedded as raw DSL dicts — NOT expanded on the host.
+    # The sandbox-side _expand_dsl() expands them at runtime.
     all_tests: List[Dict[str, Any]] = []
     for t in problem.public_tests:
         all_tests.append({
@@ -74,6 +89,12 @@ def build_harness(source: str, problem: ProblemSpec, nonce: str) -> str:
     fn_name = problem.function_name
     marker = f"{_MARKER_PREFIX}{nonce}{_MARKER_SUFFIX}"
 
+    # B1 fix: json.dumps(all_tests) once → compact JSON string literal in script.
+    # The !r repr wraps it as a Python string literal.  json.loads() in the
+    # sandbox decodes it to list[dict].  Previously json.dumps(json.dumps(...))
+    # caused json.loads() to return a str, not a list.
+    all_tests_json = json.dumps(all_tests)
+
     # The harness script — runs inside the sandbox on Python 3.8
     lines = [
         "from __future__ import annotations",
@@ -81,14 +102,40 @@ def build_harness(source: str, problem: ProblemSpec, nonce: str) -> str:
         f"PM_LAYOUT = {json.dumps(layout)!r}",
         f"PM_SOURCE_B64 = {source_b64!r}",
         "",
-        "import sys, json, copy, time, base64, io, traceback",
+        # B9 fix: import signal for C4 timer
+        "import sys, json, copy, time, base64, io, traceback, signal",
         "from typing import List, Optional, Dict, Tuple, Set, Any",
         "import collections, heapq, bisect, math, itertools, functools",
         "",
         f"_MARKER = {marker!r}",
         f"_FN_NAME = {fn_name!r}",
         f"_COMPARATOR = {comparator!r}",
-        f"_ALL_TESTS = json.loads({json.dumps(json.dumps(all_tests))!r})",
+        # B1 fix: single json.dumps
+        f"_ALL_TESTS = json.loads({all_tests_json!r})",
+        "",
+        # C4: custom BaseException subclass for per-test timer
+        "class TestTimeoutError(BaseException):",
+        "    pass",
+        "",
+        # C4: register SIGALRM handler, guarded for platforms without setitimer (Windows)
+        "if hasattr(signal, 'setitimer'):",
+        "    def _timeout_handler(signum, frame):",
+        "        raise TestTimeoutError('Per-test time limit exceeded')",
+        "    signal.signal(signal.SIGALRM, _timeout_handler)",
+        "",
+        # B8 fix: DSL expansion happens inside sandbox, not on host
+        "def _expand_dsl(v):",
+        "    if isinstance(v, dict):",
+        "        if '$range' in v:",
+        "            a = v['$range']",
+        "            return list(range(a[0], a[1]))",
+        "        if '$repeat' in v:",
+        "            a = v['$repeat']",
+        "            return [a[0]] * a[1]",
+        "        return {k: _expand_dsl(vv) for k, vv in v.items()}",
+        "    if isinstance(v, list):",
+        "        return [_expand_dsl(item) for item in v]",
+        "    return v",
         "",
         "def _emit(data):",
         "    print(_MARKER + json.dumps(data, default=str), flush=True)",
@@ -116,7 +163,16 @@ def build_harness(source: str, problem: ProblemSpec, nonce: str) -> str:
         "    sys.exit(0)",
         "",
         "# --- Execute to define functions ---",
-        "_ns = {}",
+        # B9 fix: seed namespace with all preamble imports so candidate code can
+        # rely on math, collections, etc. without explicitly importing them.
+        "_ns = {",
+        "    'sys': sys, 'json': json, 'copy': copy, 'time': time,",
+        "    'base64': base64, 'io': io, 'traceback': traceback,",
+        "    'math': math, 'collections': collections, 'heapq': heapq,",
+        "    'bisect': bisect, 'itertools': itertools, 'functools': functools,",
+        "    'List': List, 'Optional': Optional, 'Dict': Dict,",
+        "    'Tuple': Tuple, 'Set': Set, 'Any': Any,",
+        "}",
         "exec(_compiled, _ns)",
         "",
         "# --- Locate the function ---",
@@ -137,9 +193,11 @@ def build_harness(source: str, problem: ProblemSpec, nonce: str) -> str:
         "# --- Run tests ---",
         "for _i, _tc in enumerate(_ALL_TESTS):",
         "    _kind = _tc['kind']",
+        # B2/C4 fix: _timeout_s is now actually used via setitimer
         "    _timeout_s = _tc.get('timeout_ms', 5000) / 1000.0",
-        "    _args = copy.deepcopy(_tc['args'])",
-        "    _expected = _tc['expected']",
+        # B8 fix: expand DSL inside sandbox
+        "    _args = _expand_dsl(_tc['args'])",
+        "    _expected = _expand_dsl(_tc['expected'])",
         "    _result = {",
         "        'type': 'test', 'index': _i, 'kind': _kind,",
         "        'passed': False, 'outcome': 'not_run',",
@@ -148,17 +206,24 @@ def build_harness(source: str, problem: ProblemSpec, nonce: str) -> str:
         "    if _kind == 'public':",
         "        _result['input_repr'] = repr(_args)[:200]",
         "        _result['expected_repr'] = repr(_expected)[:200]",
+        "    _old_stdout = sys.stdout",
+        "    _old_stderr = sys.stderr",
+        "    _cap_out = io.StringIO()",
+        "    _cap_err = io.StringIO()",
+        "    _t0 = None",
         "    try:",
-        "        _old_stdout = sys.stdout",
-        "        _old_stderr = sys.stderr",
-        "        _cap_out = io.StringIO()",
-        "        _cap_err = io.StringIO()",
         "        sys.stdout = _cap_out",
         "        sys.stderr = _cap_err",
+        # C4: arm per-test timer
+        "        if hasattr(signal, 'setitimer'):",
+        "            signal.setitimer(signal.ITIMER_REAL, _timeout_s)",
         "        _t0 = time.monotonic()",
         "        try:",
         "            _actual = _fn(*_args)",
         "        finally:",
+        # C4: always disarm timer in inner finally
+        "            if hasattr(signal, 'setitimer'):",
+        "                signal.setitimer(signal.ITIMER_REAL, 0)",
         "            _elapsed = (time.monotonic() - _t0) * 1000",
         "            sys.stdout = _old_stdout",
         "            sys.stderr = _old_stderr",
@@ -168,13 +233,19 @@ def build_harness(source: str, problem: ProblemSpec, nonce: str) -> str:
         "        _result['outcome'] = 'pass' if _ok else 'wrong_answer'",
         "        if _kind == 'public':",
         "            _result['actual_repr'] = repr(_actual)[:200]",
+        # C4: catch TestTimeoutError before generic BaseException
+        "    except TestTimeoutError:",
+        "        sys.stdout = _old_stdout",
+        "        sys.stderr = _old_stderr",
+        "        _result['outcome'] = 'timeout'",
+        "        _result['error'] = 'Per-test time limit exceeded'",
+        "        _result['time_ms'] = round((time.monotonic() - _t0) * 1000, 2) if _t0 is not None else None",
         "    except BaseException as _exc:",
         "        sys.stdout = _old_stdout",
         "        sys.stderr = _old_stderr",
         "        _result['outcome'] = 'exception'",
         "        _result['error'] = type(_exc).__name__ + ': ' + str(_exc)[:300]",
-        "        _elapsed = (time.monotonic() - _t0) * 1000 if '_t0' in dir() else 0",
-        "        _result['time_ms'] = round(_elapsed, 2)",
+        "        _result['time_ms'] = round((time.monotonic() - _t0) * 1000, 2) if _t0 is not None else None",
         "    _emit(_result)",
         "",
         "_emit({'type': 'done'})",

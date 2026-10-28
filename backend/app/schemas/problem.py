@@ -17,6 +17,10 @@ DESIGN
     {"$range": [start, stop]}  →  list(range(start, stop))
     {"$repeat": [value, count]} →  [value] * count
   This avoids multi-MB JSON files for performance test cases.
+• DSL is intentionally NOT expanded on the host.  The harness script
+  carries the compact DSL literals and expands them inside the sandbox.
+  This keeps the script small (< 20 KB) and avoids ~694 KB payloads
+  that would breach Judge0's stdin size limit (B8 fix).
 • The ``perf_test`` is optional; not every problem needs one.
 """
 
@@ -25,7 +29,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class Comparator(str, Enum):
@@ -41,6 +45,10 @@ def expand_dsl(value: Any) -> Any:
     Supported:
         {"$range": [start, stop]}   → list(range(start, stop))
         {"$repeat": [value, count]} → [value] * count
+
+    This function is intentionally NOT called during Pydantic validation
+    so that the harness can embed raw DSL and expand it inside the sandbox.
+    It is kept here for host-side unit tests and documentation only.
     """
     if isinstance(value, dict):
         if "$range" in value:
@@ -62,16 +70,6 @@ class TestSpec(BaseModel):
     args: list[Any]
     expected: Any
     timeout_ms: int = 5000
-
-    @field_validator("args", mode="before")
-    @classmethod
-    def _expand_args_dsl(cls, v: list[Any]) -> list[Any]:
-        return [expand_dsl(a) for a in v]
-
-    @field_validator("expected", mode="before")
-    @classmethod
-    def _expand_expected_dsl(cls, v: Any) -> Any:
-        return expand_dsl(v)
 
 
 class ProblemSpec(BaseModel):
