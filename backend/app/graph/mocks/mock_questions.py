@@ -39,6 +39,7 @@ MOCK_QUESTIONS: dict[InterviewPhase, list[dict]] = {
                 "Please write your solution and submit your code."
             ),
             "type": QuestionType.CODING,
+            "problem_id": "two_sum",
         },
         {
             "question": (
@@ -50,6 +51,7 @@ MOCK_QUESTIONS: dict[InterviewPhase, list[dict]] = {
                 "Please write your solution and submit your code."
             ),
             "type": QuestionType.CODING,
+            "problem_id": "valid_parentheses",
         },
     ],
 }

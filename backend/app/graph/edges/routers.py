@@ -76,7 +76,6 @@ def after_human_input_router(state: dict) -> str:
     phase = InterviewPhase(phase_str)
     mode_str = state.get("interview_mode", InterviewMode.STANDARD.value)
     mode = InterviewMode(mode_str)
-    current_turn = state.get("current_turn", 0)
 
     # ── 1. Check if we should go to assessment ──────────────────────
     if phase in (InterviewPhase.ASSESSMENT, InterviewPhase.COMPLETE):
@@ -84,21 +83,10 @@ def after_human_input_router(state: dict) -> str:
 
     # Check turn budget — if current phase turns exhausted, advance
     turn_budgets = MODE_TURN_BUDGETS.get(mode, {})
-    max_turns = turn_budgets.get(phase, DEFAULT_MAX_TURNS_PER_PHASE)
     total_turns = state.get("total_turns", 0)
 
     # Safety: if we've done a LOT of total turns, force assessment
     overall_max = sum(turn_budgets.values()) if turn_budgets else 8
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        from pathlib import Path as _Path
-        _lp = _Path(__file__).resolve().parents[3] / "debug-af240c.log"
-        with _lp.open("a", encoding="utf-8") as _f:
-            _f.write(_json.dumps({"sessionId":"af240c","hypothesisId":"B","location":"routers.py:after_human_input","message":"budget check","data":{"phase": phase_str,"question_type": question_type,"current_turn": current_turn,"max_turns": max_turns,"total_turns": total_turns,"overall_max": overall_max,"used_max_turns": False,"code_present": bool(code and str(code).strip())},"timestamp": int(_time.time()*1000)})+"\n")
-    except Exception:
-        pass
-    # #endregion
     if total_turns >= overall_max:
         return "assessment"
 
@@ -126,21 +114,48 @@ def after_executor_router(state: dict) -> str:
     """
     Decides where to go AFTER code execution.
 
-    Decision logic:
-        pass    → back to interviewer (move on to next question)
-        partial → debater (challenge on optimization / edge cases)
-        fail    → debater (help candidate debug)
-        error   → debater (help candidate fix)
-
-    Returns one of: "pass", "fail"
-    These are KEYS in the path_map defined in workflow.py.
+    Returns one of:
+        "retry_input"  → back to human_input (unsupported lang / invalid)
+        "infra_error"  → to interviewer (sandbox failure, not candidate's fault)
+        "optimize"     → to debater (correct but slow, attempts remain)
+        "probe"        → to debater (correct + fast, complexity probe)
+        "pass"         → to interviewer (move on)
+        "exhausted"    → to interviewer (attempts used up, move on)
+        "fail"         → to debater (wrong answer / runtime error)
     """
+    from app.graph.constants import MAX_EXECUTION_ATTEMPTS, OPTIMIZATION_PROBE_MODES
 
-    result = state.get("execution_result", {})
-    status = result.get("status", "fail")
+    result = state.get("execution_result") or {}
+    status = result.get("status", "failed")
+    attempts = state.get("execution_attempts", 0)
+    mode = state.get("interview_mode", "standard")
 
-    if status == "pass":
+    # 1. Unsupported language or invalid submission → retry
+    if status in ("unsupported_language", "invalid_submission"):
+        return "retry_input"
+
+    # 2. Infrastructure error → not candidate's fault
+    if status == "infra_error":
+        return "infra_error"
+
+    # 3. Passed
+    if status == "passed":
+        perf_ok = result.get("perf_ok")
+
+        # 3a. Correct but slow → optimize route (if attempts remain)
+        if perf_ok is False:
+            if attempts >= MAX_EXECUTION_ATTEMPTS:
+                return "pass"
+            return "optimize"
+
+        # 3b. Correct + fast → probe once in standard/deep_dive modes
+        if mode in OPTIMIZATION_PROBE_MODES and not state.get("optimization_probe_done", False):
+            return "probe"
+
+        # 3c. Just pass
         return "pass"
-    else:
-        # partial, fail, error → all go to debater
-        return "fail"
+
+    # 4. Failing statuses
+    if attempts >= MAX_EXECUTION_ATTEMPTS:
+        return "exhausted"
+    return "fail"

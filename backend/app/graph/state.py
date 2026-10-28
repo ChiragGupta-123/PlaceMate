@@ -33,6 +33,7 @@ NOTE ON `total=False`:
 
 from __future__ import annotations
 
+import operator
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import AnyMessage
@@ -71,8 +72,11 @@ class InterviewState(TypedDict, total=False):
     code_language: str
 
     # ── 6. Code execution ───────────────────────────────────────────
+    current_problem_id: str | None
+    execution_attempts: int
     execution_result: dict[str, Any] | None
-    execution_history: list[dict[str, Any]]
+    execution_history: Annotated[list[dict[str, Any]], operator.add]
+    optimization_probe_done: bool
 
     # ── 7. Debater analysis ─────────────────────────────────────────
     complexity_analysis: str
@@ -128,8 +132,12 @@ def make_initial_state(
         "candidate_answer": "",
         "code_submission": "",
         "code_language": "python",
+        "current_problem_id": None,
+        "execution_attempts": 0,
+        "infra_retries": 0,
         "execution_result": None,
         "execution_history": [],
+        "optimization_probe_done": False,
         "complexity_analysis": "",
         "follow_up_count": 0,
         "is_follow_up_pass_through": False,

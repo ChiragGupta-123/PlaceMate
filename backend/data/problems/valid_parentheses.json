@@ -1,0 +1,56 @@
+{
+  "id": "valid_parentheses",
+  "title": "Valid Parentheses",
+  "statement": "Given a string containing just the characters '(', ')', '{', '}', '[' and ']', determine if the input string is valid.",
+  "function_name": "is_valid",
+  "comparator": "exact",
+  "expected_time_complexity": "O(n)",
+  "expected_space_complexity": "O(n)",
+  "memory_limit_kb": 256000,
+  "difficulty": "easy",
+  "public_tests": [
+    {
+      "args": ["()"],
+      "expected": true,
+      "timeout_ms": 1000
+    },
+    {
+      "args": ["()[]{}"],
+      "expected": true,
+      "timeout_ms": 1000
+    },
+    {
+      "args": ["(]"],
+      "expected": false,
+      "timeout_ms": 1000
+    }
+  ],
+  "hidden_tests": [
+    {
+      "args": [""],
+      "expected": true,
+      "timeout_ms": 1000
+    },
+    {
+      "args": ["([)]"],
+      "expected": false,
+      "timeout_ms": 1000
+    },
+    {
+      "args": ["{[]}"],
+      "expected": true,
+      "timeout_ms": 1000
+    },
+    {
+      "args": ["(((("],
+      "expected": false,
+      "timeout_ms": 1000
+    }
+  ],
+  "perf_test": {
+    "args": [{"$repeat": ["()[]{}", 10000]}],
+    "expected": true,
+    "timeout_ms": 3000
+  },
+  "perf_budget_ms": 2000
+}

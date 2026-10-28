@@ -83,16 +83,5 @@ def human_input_node(state: dict) -> Command:
         updates["code_submission"] = ""
         updates["code_language"] = ""
 
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        from pathlib import Path as _Path
-        _lp = _Path(__file__).resolve().parents[3] / "debug-af240c.log"
-        with _lp.open("a", encoding="utf-8") as _f:
-            _f.write(_json.dumps({"sessionId":"af240c","hypothesisId":"A","location":"human_input.py:after_resume","message":"human_input code fields","data":{"cleared_code": not bool(code),"code_len": len(code or ""),"q_type": question_type,"phase": state.get("interview_phase"),"hist_len": len(state.get("code_submissions", [])),"exec_len": len(state.get("execution_history", []))},"timestamp": int(_time.time()*1000)})+"\n")
-    except Exception:
-        pass
-    # #endregion
-
     # (current_turn is now managed by interviewer_node to avoid skipping questions on follow-up)
     return Command(update=updates)

@@ -93,17 +93,6 @@ def assessor_node(state: dict) -> dict:
         for r in execution_history
     )
 
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        from pathlib import Path as _Path
-        _lp = _Path(__file__).resolve().parents[3] / "debug-af240c.log"
-        with _lp.open("a", encoding="utf-8") as _f:
-            _f.write(_json.dumps({"sessionId":"af240c","hypothesisId":"A","location":"assessor.py:evidence","message":"assessor has_code vs history","data":{"has_code": has_code,"code_submission": bool(state.get("code_submission")),"code_submissions_len": len(state.get("code_submissions", [])),"exec_statuses": [r.get("status") for r in execution_history],"any_pass": any_pass,"all_pass": all_pass,"total_turns": total_turns},"timestamp": int(_time.time()*1000)})+"\n")
-    except Exception:
-        pass
-    # #endregion
-
     # Mock scoring heuristic
     rubric_scores: dict[str, float] = {}
     for category, max_score in RUBRIC_CATEGORIES.items():
@@ -147,16 +136,6 @@ def assessor_node(state: dict) -> dict:
     if not has_code:
         weaknesses.append("No code submission provided")
 
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        from pathlib import Path as _Path
-        _lp = _Path(__file__).resolve().parents[3] / "debug-af240c.log"
-        with _lp.open("a", encoding="utf-8") as _f:
-            _f.write(_json.dumps({"sessionId":"af240c","hypothesisId":"A","location":"assessor.py:feedback","message":"scorecard lists","data":{"strengths": strengths,"weaknesses": weaknesses},"timestamp": int(_time.time()*1000)})+"\n")
-    except Exception:
-        pass
-    # #endregion
     if total_turns <= 2:
         weaknesses.append("Limited engagement with interview questions")
     if total_turns >= 5:

@@ -98,16 +98,6 @@ def interviewer_node(state: dict) -> dict:
 
     # ── Handle ASSESSMENT or COMPLETE — nothing to ask ──────────────
     if phase in (InterviewPhase.ASSESSMENT, InterviewPhase.COMPLETE):
-        # #region agent log
-        try:
-            import json as _json, time as _time
-            from pathlib import Path as _Path
-            _lp = _Path(__file__).resolve().parents[3] / "debug-af240c.log"
-            with _lp.open("a", encoding="utf-8") as _f:
-                _f.write(_json.dumps({"sessionId":"af240c","hypothesisId":"C","location":"interviewer.py:assessment_passthrough","message":"interviewer returning empty q still edges to human_input","data":{"phase": phase.value,"current_turn": current_turn,"code_submission": bool(state.get("code_submission")),"code_submissions_len": len(state.get("code_submissions", []))},"timestamp": int(_time.time()*1000)})+"\n")
-        except Exception:
-            pass
-        # #endregion
         return {
             "interview_phase": phase.value,
             "current_question": "",
@@ -128,12 +118,16 @@ def interviewer_node(state: dict) -> dict:
     # Note: we return `messages: [ai_message]` — because of the
     # add_messages reducer, this APPENDS to the conversation history
     # rather than replacing it.
+    problem_id = q_data.get("problem_id")  # None for non-coding questions
     return {
         "current_question": question_text,
         "current_question_type": question_type.value,
         "interview_phase": phase.value,
         "current_turn": current_turn + 1,
         "total_turns": state.get("total_turns", 0) + 1,
+        "current_problem_id": problem_id,
+        "execution_attempts": 0,
+        "optimization_probe_done": False,
         "messages": [ai_message],
     }
 
