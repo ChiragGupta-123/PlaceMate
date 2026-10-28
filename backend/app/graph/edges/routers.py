@@ -76,7 +76,6 @@ def after_human_input_router(state: dict) -> str:
     phase = InterviewPhase(phase_str)
     mode_str = state.get("interview_mode", InterviewMode.STANDARD.value)
     mode = InterviewMode(mode_str)
-    current_turn = state.get("current_turn", 0)
 
     # ── 1. Check if we should go to assessment ──────────────────────
     if phase in (InterviewPhase.ASSESSMENT, InterviewPhase.COMPLETE):
@@ -84,21 +83,10 @@ def after_human_input_router(state: dict) -> str:
 
     # Check turn budget — if current phase turns exhausted, advance
     turn_budgets = MODE_TURN_BUDGETS.get(mode, {})
-    max_turns = turn_budgets.get(phase, DEFAULT_MAX_TURNS_PER_PHASE)
     total_turns = state.get("total_turns", 0)
 
     # Safety: if we've done a LOT of total turns, force assessment
     overall_max = sum(turn_budgets.values()) if turn_budgets else 8
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        from pathlib import Path as _Path
-        _lp = _Path(__file__).resolve().parents[3] / "debug-af240c.log"
-        with _lp.open("a", encoding="utf-8") as _f:
-            _f.write(_json.dumps({"sessionId":"af240c","hypothesisId":"B","location":"routers.py:after_human_input","message":"budget check","data":{"phase": phase_str,"question_type": question_type,"current_turn": current_turn,"max_turns": max_turns,"total_turns": total_turns,"overall_max": overall_max,"used_max_turns": False,"code_present": bool(code and str(code).strip())},"timestamp": int(_time.time()*1000)})+"\n")
-    except Exception:
-        pass
-    # #endregion
     if total_turns >= overall_max:
         return "assessment"
 
