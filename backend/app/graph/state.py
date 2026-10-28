@@ -134,6 +134,7 @@ def make_initial_state(
         "code_language": "python",
         "current_problem_id": None,
         "execution_attempts": 0,
+        "infra_retries": 0,
         "execution_result": None,
         "execution_history": [],
         "optimization_probe_done": False,
