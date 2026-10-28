@@ -126,21 +126,48 @@ def after_executor_router(state: dict) -> str:
     """
     Decides where to go AFTER code execution.
 
-    Decision logic:
-        pass    → back to interviewer (move on to next question)
-        partial → debater (challenge on optimization / edge cases)
-        fail    → debater (help candidate debug)
-        error   → debater (help candidate fix)
-
-    Returns one of: "pass", "fail"
-    These are KEYS in the path_map defined in workflow.py.
+    Returns one of:
+        "retry_input"  → back to human_input (unsupported lang / invalid)
+        "infra_error"  → to interviewer (sandbox failure, not candidate's fault)
+        "optimize"     → to debater (correct but slow, attempts remain)
+        "probe"        → to debater (correct + fast, complexity probe)
+        "pass"         → to interviewer (move on)
+        "exhausted"    → to interviewer (attempts used up, move on)
+        "fail"         → to debater (wrong answer / runtime error)
     """
+    from app.graph.constants import MAX_EXECUTION_ATTEMPTS, OPTIMIZATION_PROBE_MODES
 
-    result = state.get("execution_result", {})
-    status = result.get("status", "fail")
+    result = state.get("execution_result") or {}
+    status = result.get("status", "failed")
+    attempts = state.get("execution_attempts", 0)
+    mode = state.get("interview_mode", "standard")
 
-    if status == "pass":
+    # 1. Unsupported language or invalid submission → retry
+    if status in ("unsupported_language", "invalid_submission"):
+        return "retry_input"
+
+    # 2. Infrastructure error → not candidate's fault
+    if status == "infra_error":
+        return "infra_error"
+
+    # 3. Passed
+    if status == "passed":
+        perf_ok = result.get("perf_ok")
+
+        # 3a. Correct but slow → optimize route (if attempts remain)
+        if perf_ok is False:
+            if attempts >= MAX_EXECUTION_ATTEMPTS:
+                return "pass"
+            return "optimize"
+
+        # 3b. Correct + fast → probe once in standard/deep_dive modes
+        if mode in OPTIMIZATION_PROBE_MODES and not state.get("optimization_probe_done", False):
+            return "probe"
+
+        # 3c. Just pass
         return "pass"
-    else:
-        # partial, fail, error → all go to debater
-        return "fail"
+
+    # 4. Failing statuses
+    if attempts >= MAX_EXECUTION_ATTEMPTS:
+        return "exhausted"
+    return "fail"

@@ -1,15 +1,18 @@
 # ============================================================
-# PlaceMate — Phase 1 Dependencies
-# Only what's needed to run the LangGraph backbone with mocks.
+# PlaceMate — Dependencies
 # ============================================================
 
 # LangGraph: the stateful graph orchestration framework
-# This is the CORE of our interview workflow engine.
 langgraph>=0.4.1
 
 # LangChain Core: provides base abstractions (messages, etc.)
-# langgraph depends on this, but we pin it explicitly for clarity.
 langchain-core>=0.3.0
 
 # SQLite checkpointer for durable graph state
 langgraph-checkpoint-sqlite>=2.0.0
+
+# HTTP client (used by Judge0 sandbox provider)
+httpx>=0.27.0
+
+# Settings from environment variables / .env files
+pydantic-settings>=2.0.0

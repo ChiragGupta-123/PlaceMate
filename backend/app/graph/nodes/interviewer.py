@@ -128,12 +128,16 @@ def interviewer_node(state: dict) -> dict:
     # Note: we return `messages: [ai_message]` — because of the
     # add_messages reducer, this APPENDS to the conversation history
     # rather than replacing it.
+    problem_id = q_data.get("problem_id")  # None for non-coding questions
     return {
         "current_question": question_text,
         "current_question_type": question_type.value,
         "interview_phase": phase.value,
         "current_turn": current_turn + 1,
         "total_turns": state.get("total_turns", 0) + 1,
+        "current_problem_id": problem_id,
+        "execution_attempts": 0,
+        "optimization_probe_done": False,
         "messages": [ai_message],
     }
 

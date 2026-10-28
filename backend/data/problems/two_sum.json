@@ -1,0 +1,56 @@
+{
+  "id": "two_sum",
+  "title": "Two Sum",
+  "statement": "Given an array of integers and a target sum, find two numbers that add up to the target. Return their indices.",
+  "function_name": "two_sum",
+  "comparator": "unordered_list",
+  "expected_time_complexity": "O(n)",
+  "expected_space_complexity": "O(n)",
+  "memory_limit_kb": 256000,
+  "difficulty": "medium",
+  "public_tests": [
+    {
+      "args": [[2, 7, 11, 15], 9],
+      "expected": [0, 1],
+      "timeout_ms": 5000
+    },
+    {
+      "args": [[3, 2, 4], 6],
+      "expected": [1, 2],
+      "timeout_ms": 5000
+    },
+    {
+      "args": [[3, 3], 6],
+      "expected": [0, 1],
+      "timeout_ms": 5000
+    }
+  ],
+  "hidden_tests": [
+    {
+      "args": [[1], 2],
+      "expected": [],
+      "timeout_ms": 5000
+    },
+    {
+      "args": [[0, 4, 3, 0], 0],
+      "expected": [0, 3],
+      "timeout_ms": 5000
+    },
+    {
+      "args": [[-1, -2, -3, -4, -5], -8],
+      "expected": [2, 4],
+      "timeout_ms": 5000
+    },
+    {
+      "args": [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 19],
+      "expected": [8, 9],
+      "timeout_ms": 5000
+    }
+  ],
+  "perf_test": {
+    "args": [{"$range": [0, 100000]}, 199997],
+    "expected": [99998, 99999],
+    "timeout_ms": 3000
+  },
+  "perf_budget_ms": 2000
+}

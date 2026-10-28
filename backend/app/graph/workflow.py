@@ -107,25 +107,30 @@ def build_interview_graph(
 
     # ── 4. Unconditional edges ──────────────────────────────────────
     builder.add_edge(interviewer, human_input)   # always wait for candidate
-    builder.add_edge(debater, interviewer)       # the Debater cycle
-    builder.add_edge(assessor, END)              # interview is over
+    builder.add_edge(debater, interviewer)        # the Debater cycle
+    builder.add_edge(assessor, END)               # interview is over
 
     # ── 5. Conditional edges ────────────────────────────────────────
     builder.add_conditional_edges(
         human_input,
         after_human_input_router,
         {
-            "technical": interviewer,   # ask the next question
-            "coding": executor,         # run submitted code
-            "assessment": assessor,     # wrap up
+            "technical": interviewer,    # ask the next question
+            "coding": executor,          # run submitted code
+            "assessment": assessor,      # wrap up
         },
     )
     builder.add_conditional_edges(
         executor,
         after_executor_router,
         {
-            "pass": interviewer,        # next question
-            "fail": debater,            # challenge the candidate
+            "pass": interviewer,         # correct → next question
+            "exhausted": interviewer,    # attempts used up → move on
+            "infra_error": interviewer,  # sandbox failure → not candidate fault
+            "fail": debater,             # wrong answer / error → challenge
+            "optimize": debater,         # correct but slow → complexity challenge
+            "probe": debater,            # correct + fast → probe complexity
+            "retry_input": human_input,  # invalid/unsupported → let them fix
         },
     )
 

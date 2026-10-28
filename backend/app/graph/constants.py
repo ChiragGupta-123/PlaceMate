@@ -69,3 +69,9 @@ MODE_TURN_BUDGETS: dict[InterviewMode, dict[InterviewPhase, int]] = {
 
 # Default max turns for any phase not listed above
 DEFAULT_MAX_TURNS_PER_PHASE: int = 2
+
+# ── Phase 3: Execution limits ──────────────────────────────────────
+MAX_EXECUTION_ATTEMPTS: int = 4
+
+# Interview modes where a correct solution triggers a complexity probe
+OPTIMIZATION_PROBE_MODES: set[str] = {"standard", "deep_dive"}
