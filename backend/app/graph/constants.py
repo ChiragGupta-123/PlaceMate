@@ -73,5 +73,8 @@ DEFAULT_MAX_TURNS_PER_PHASE: int = 2
 # ── Phase 3: Execution limits ──────────────────────────────────────
 MAX_EXECUTION_ATTEMPTS: int = 4
 
+# Max infra (sandbox) failures before router advances without penalising candidate (C3/D2)
+MAX_INFRA_RETRIES: int = 2
+
 # Interview modes where a correct solution triggers a complexity probe
 OPTIMIZATION_PROBE_MODES: set[str] = {"standard", "deep_dive"}

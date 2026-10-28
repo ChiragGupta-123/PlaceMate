@@ -12,39 +12,39 @@
     {
       "args": ["()"],
       "expected": true,
-      "timeout_ms": 5000
+      "timeout_ms": 1000
     },
     {
       "args": ["()[]{}"],
       "expected": true,
-      "timeout_ms": 5000
+      "timeout_ms": 1000
     },
     {
       "args": ["(]"],
       "expected": false,
-      "timeout_ms": 5000
+      "timeout_ms": 1000
     }
   ],
   "hidden_tests": [
     {
       "args": [""],
       "expected": true,
-      "timeout_ms": 5000
+      "timeout_ms": 1000
     },
     {
       "args": ["([)]"],
       "expected": false,
-      "timeout_ms": 5000
+      "timeout_ms": 1000
     },
     {
       "args": ["{[]}"],
       "expected": true,
-      "timeout_ms": 5000
+      "timeout_ms": 1000
     },
     {
       "args": ["(((("],
       "expected": false,
-      "timeout_ms": 5000
+      "timeout_ms": 1000
     }
   ],
   "perf_test": {

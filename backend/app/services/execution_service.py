@@ -350,7 +350,10 @@ class ExecutionService:
         status: ExecutionStatus
         if all_correct:
             status = ExecutionStatus.passed
-        elif not parsed.tests and response.outcome == SandboxOutcome.timeout:
+        elif response.outcome == SandboxOutcome.timeout:
+            # C2: sandbox wall-clock timeout wins regardless of partial parsed results.
+            # Even if some tests ran and passed, the run as a whole exceeded the
+            # Judge0 wall limit — return time_limit_exceeded, never passed.
             status = ExecutionStatus.time_limit_exceeded
         elif not parsed.tests and response.outcome == SandboxOutcome.internal_error:
             return ExecutionResult(

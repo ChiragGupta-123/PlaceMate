@@ -56,8 +56,8 @@ class Settings(BaseSettings):
     judge0_use_wait: bool = False
 
     # ── Execution limits ────────────────────────────────────────────
-    max_cpu_time_s: float = 15.0
-    max_wall_time_s: float = 30.0
+    max_cpu_time_s: float = 10.0   # Judge0 CE hard cap
+    max_wall_time_s: float = 15.0  # Judge0 CE hard cap (B3 fix — was 30.0)
     default_memory_kb: int = 256_000
     max_source_bytes: int = 20_000
 
