@@ -127,6 +127,7 @@ def interviewer_node(state: dict) -> dict:
         "total_turns": state.get("total_turns", 0) + 1,
         "current_problem_id": problem_id,
         "execution_attempts": 0,
+        "infra_retries": 0,
         "optimization_probe_done": False,
         "messages": [ai_message],
     }

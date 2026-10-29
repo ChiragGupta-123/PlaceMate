@@ -19,6 +19,14 @@ def test_factory_covers_every_state_key():
     assert factory_keys == schema_keys
 
 
+def test_infra_retries_is_a_state_field_with_zero_default():
+    assert "infra_retries" in typing.get_type_hints(InterviewState, include_extras=True)
+    state = make_initial_state(
+        session_id="s", candidate_name="c", target_company="x", target_role="y"
+    )
+    assert state["infra_retries"] == 0
+
+
 def test_factory_does_not_share_mutable_defaults():
     a = make_initial_state(session_id="a", candidate_name="c", target_company="x", target_role="y")
     b = make_initial_state(session_id="b", candidate_name="c", target_company="x", target_role="y")
