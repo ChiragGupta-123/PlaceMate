@@ -60,6 +60,9 @@ _STATUS_MAP: Dict[int, SandboxOutcome] = {
 # Status IDs that mean "still running"
 _PENDING_STATUSES = {1, 2}  # In Queue, Processing
 
+# Consecutive transient poll failures tolerated before giving up
+_MAX_CONSECUTIVE_POLL_ERRORS = 3
+
 # Fields to request on poll to minimize response size
 _POLL_FIELDS = (
     "status_id,stdout,stderr,compile_output,message,"
@@ -186,6 +189,7 @@ class Judge0Sandbox:
         interval = self._settings.poll_interval_initial_s
         consecutive_errors = 0
         poll_count = 0
+        last_error: Exception | None = None
 
         while True:
             if self._monotonic() >= deadline:
@@ -212,39 +216,62 @@ class Judge0Sandbox:
                 )
                 requests_made += 1
                 poll_count += 1
+                if poll_resp.status_code in (401, 403):
+                    raise SandboxAuthError(
+                        "Authentication failed while polling"
+                    )
                 self._check_rate_limit(poll_resp)
                 poll_resp.raise_for_status()
                 poll_data = poll_resp.json()
                 consecutive_errors = 0
-            except SandboxQuotaExceeded:
-                raise
-            except SandboxAuthError:
-                raise
-            except (httpx.HTTPStatusError, httpx.RequestError, Exception) as exc:
-                consecutive_errors += 1
-                if consecutive_errors >= 3:
-                    raise SandboxUnavailable(
-                        f"3 consecutive poll failures"
-                    ) from exc
-                interval = min(
-                    interval * self._settings.poll_backoff,
-                    self._settings.poll_interval_max_s,
-                )
-                continue
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if 400 <= status < 500:
+                    # 4xx other than 429 (raised by _check_rate_limit) is
+                    # our fault: retrying would only repeat it.
+                    raise SandboxBadRequest(
+                        f"Poll rejected (HTTP {status})"
+                    ) from None
+                last_error = exc
+            except (httpx.RequestError, ValueError) as exc:
+                # Network failure, or a 2xx body that is not valid JSON.
+                last_error = exc
+            else:
+                status_id = poll_data.get("status", {}).get("id") if isinstance(
+                    poll_data.get("status"), dict
+                ) else poll_data.get("status_id")
 
-            status_id = poll_data.get("status", {}).get("id") if isinstance(
-                poll_data.get("status"), dict
-            ) else poll_data.get("status_id")
+                if status_id in _PENDING_STATUSES:
+                    interval = min(
+                        interval * self._settings.poll_backoff,
+                        self._settings.poll_interval_max_s,
+                    )
+                    continue
 
-            if status_id in _PENDING_STATUSES:
-                interval = min(
-                    interval * self._settings.poll_backoff,
-                    self._settings.poll_interval_max_s,
-                )
-                continue
+                # Final status
+                return self._build_response(poll_data, requests_made, t0)
 
-            # Final status
-            return self._build_response(poll_data, requests_made, t0)
+            consecutive_errors += 1
+            if consecutive_errors >= _MAX_CONSECUTIVE_POLL_ERRORS:
+                break
+            interval = min(
+                interval * self._settings.poll_backoff,
+                self._settings.poll_interval_max_s,
+            )
+
+        # Raised outside the except block on purpose: chaining the low-level
+        # error (``from exc``) could copy the API key into the traceback.
+        detail = (
+            f"{type(last_error).__name__}: {last_error}"
+            if last_error is not None
+            else "unknown"
+        )
+        raise SandboxUnavailable(
+            self._scrub(
+                f"Poll failed after {consecutive_errors} consecutive errors "
+                f"({detail})"
+            )
+        ) from None
 
     # ── Private helpers ─────────────────────────────────────────────
 
@@ -260,7 +287,12 @@ class Judge0Sandbox:
         return h
 
     def _check_rate_limit(self, resp: httpx.Response) -> None:
-        """Check for 429 or zero remaining quota."""
+        """Raise only when the provider answered HTTP 429.
+
+        A successful response that reports zero remaining quota was already
+        paid for, so it is logged and handed back to the caller: raising here
+        would throw away a result we own.
+        """
         if resp.status_code == 429:
             remaining = resp.headers.get("X-RateLimit-Requests-Remaining", "?")
             limit = resp.headers.get("X-RateLimit-Requests-Limit", "?")
@@ -273,9 +305,22 @@ class Judge0Sandbox:
             try:
                 if int(remaining) <= 0:
                     logger.warning("event=quota_exhausted remaining=0")
-                    raise SandboxQuotaExceeded("Rate limit remaining is 0")
             except ValueError:
                 pass
+
+    def _scrub(self, text: str) -> str:
+        """Return ``text`` with the API key replaced by ``[redacted]``.
+
+        Nothing derived from the credential may reach a log line, an
+        exception message or an exception chain.
+        """
+        key = self._settings.judge0_rapidapi_key
+        if key is None:
+            return text
+        secret = key.get_secret_value()
+        if not secret:
+            return text
+        return text.replace(secret, "[redacted]")
 
     def _submit_with_retries(
         self, url: str, payload: Dict[str, Any],
