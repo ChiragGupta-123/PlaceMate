@@ -4,10 +4,10 @@ STATUS: Phases 1-2 done. Phase 3 is offline-complete (steps 3.1-3.6, 175 tests).
 
 
 
-Project: LangGraph mock technical-interview simulator (Python, FastAPI later). Backend is in backend/. 12-phase roadmap; we are in Phase 3 (Judge0 code execution). Never start a later phase.
+Project: LangGraph mock technical-interview simulator (Python, FastAPI later). Backend is in backend/. 12-phase roadmap; we are in Phase 4 (Interviewer LLM). Never start a later phase.
 
 HARD RULES
-- Never read, print, log or commit .env or any API key. Credentials come from environment variables only (SecretStr in settings).s
+- Never read, print, log or commit .env or any API key. Credentials come from environment variables only (SecretStr in settings).ss
 - Never run candidate code locally (no exec/eval/subprocess on it, in app code or tests). Never run the generated harness locally; tests may only ast.parse it.
 - Strict type hints. Do not reorganize folders.
 - Layering: executor_node -> ExecutionService -> SandboxInterface (Protocol) -> Judge0Sandbox / FakeSandbox. Only app/tools/judge0.py knows httpx and RapidAPI.
