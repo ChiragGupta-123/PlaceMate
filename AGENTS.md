@@ -1,14 +1,19 @@
 # PlaceMate agent rules
 
+STATUS: Phases 1-2 done. Phase 3 is offline-complete (steps 3.1-3.6, 175 tests). Step 3.7 (live Judge0 probe) is PENDING: no payment method yet, so FakeSandbox only. Do NOT write or run anything that needs a real Judge0 key. Now in Phase 4 (real Interviewer LLM). Phases 5-12 are not started: never start a later phase.
+
+
+
 Project: LangGraph mock technical-interview simulator (Python, FastAPI later). Backend is in backend/. 12-phase roadmap; we are in Phase 3 (Judge0 code execution). Never start a later phase.
 
 HARD RULES
-- Never read, print, log or commit .env or any API key. Credentials come from environment variables only (SecretStr in settings).
+- Never read, print, log or commit .env or any API key. Credentials come from environment variables only (SecretStr in settings).s
 - Never run candidate code locally (no exec/eval/subprocess on it, in app code or tests). Never run the generated harness locally; tests may only ast.parse it.
 - Strict type hints. Do not reorganize folders.
 - Layering: executor_node -> ExecutionService -> SandboxInterface (Protocol) -> Judge0Sandbox / FakeSandbox. Only app/tools/judge0.py knows httpx and RapidAPI.
 - Tests are offline with fakes. Real-provider checks use the `live` pytest marker.
-- Never git commit or git push. I commit myself.
+- Never git commit or git push until and unless I say. I commit myself.
+-After finishing a sub-step, STOP and wait for my "next". Never start the next sub-step on your own.
 
 WORKFLOW
 - One step at a time. After each step: run `python -m pytest -q` from backend/, show the output, summarize in 5 lines, then STOP.
