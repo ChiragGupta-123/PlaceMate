@@ -10,7 +10,9 @@ Rules enforced (as the code stands today):
   1. ``tools/code_sandbox.py`` imports only stdlib (plus, if it ever needs
      them, ``app.schemas`` / ``app.core``); never httpx, judge0 or app.graph.
   2. ``tools/fake_sandbox.py`` imports only stdlib and ``code_sandbox``.
-  3. Only ``tools/judge0.py`` imports or uses httpx.
+  3. Only ``tools/judge0.py`` and real LLM adapter modules
+     (``tools/llm_<provider>.py``) may import or use httpx.  The port
+     (``tools/llm_client.py``) and the fake (``tools/fake_llm.py``) never may.
   4. Only ``tools/judge0.py`` builds the RapidAPI protocol headers;
      ``core/config.py`` is the one other file allowed to *name* rapidapi,
      because that is where the SecretStr credential and its help URL live.
@@ -18,6 +20,8 @@ Rules enforced (as the code stands today):
   6. No ``exec()`` / ``eval()`` / ``os.system()`` / ``subprocess.*`` call
      anywhere under ``app/``, and no module imports ``subprocess`` (which
      would allow an aliased call to slip past call-site scanning).
+  7. Only real LLM adapters (``tools/llm_<provider>.py``) may import an
+     LLM SDK; ``llm_client.py`` and ``fake_llm.py`` never may.
 """
 
 from __future__ import annotations
@@ -33,6 +37,27 @@ RAPIDAPI_HEADERS = ("x-rapidapi-key", "x-rapidapi-host")
 RAPIDAPI_FILES = {"tools/judge0.py", "core/config.py"}
 BANNED_BUILTINS = {"exec", "eval"}
 BANNED_DOTTED = {"os.system", "builtins.exec", "builtins.eval"}
+
+# LLM adapters are ``tools/llm_<provider>.py``.  The port and the fake are
+# NOT adapters even though ``llm_client.py`` shares the prefix.
+LLM_PORT_FILE = "tools/llm_client.py"
+LLM_FAKE_FILE = "tools/fake_llm.py"
+LLM_NON_ADAPTER_FILES = {LLM_PORT_FILE, LLM_FAKE_FILE}
+
+# Third-party LLM SDK roots.  Add new providers here in Step 4.4.
+LLM_SDK_ROOTS = (
+    "openai",
+    "anthropic",
+    "groq",
+    "mistralai",
+    "cohere",
+    "litellm",
+    "ollama",
+    "google.generativeai",
+    "vertexai",
+    "langchain_openai",
+    "langchain_anthropic",
+)
 
 
 # ── AST helpers (no app imports) ─────────────────────────────────────
@@ -97,6 +122,23 @@ def _app_imports(modules: Iterable[str]) -> Set[str]:
     return {m for m in modules if m.split(".")[0] == "app"}
 
 
+def _is_llm_adapter(rel: str) -> bool:
+    """``tools/llm_<provider>.py``, but not the port or the fake."""
+    return (
+        rel.startswith("tools/llm_")
+        and rel.endswith(".py")
+        and rel not in LLM_NON_ADAPTER_FILES
+    )
+
+
+def _may_import_httpx(rel: str) -> bool:
+    return rel == "tools/judge0.py" or _is_llm_adapter(rel)
+
+
+def _is_llm_sdk(module: str) -> bool:
+    return any(_is_module(module, root) for root in LLM_SDK_ROOTS)
+
+
 # ── 1. code_sandbox.py is provider- and graph-agnostic ───────────────
 
 def test_code_sandbox_imports_only_stdlib_schemas_and_core() -> None:
@@ -137,15 +179,17 @@ def test_fake_sandbox_imports_only_stdlib_and_code_sandbox() -> None:
 
 # ── 3. httpx is confined to judge0.py ────────────────────────────────
 
-def test_only_judge0_imports_httpx() -> None:
+def test_only_judge0_and_llm_adapters_import_httpx() -> None:
     offenders: List[str] = []
     for path in _app_files():
         modules = _imported_modules(path, _parse(path))
         if any(_is_module(m, "httpx") for m in modules):
-            if _rel(path) != "tools/judge0.py":
+            if not _may_import_httpx(_rel(path)):
                 offenders.append(_rel(path))
 
-    assert offenders == [], f"httpx imported outside tools/judge0.py: {offenders}"
+    assert offenders == [], (
+        f"httpx imported outside tools/judge0.py or an LLM adapter: {offenders}"
+    )
 
     judge0 = APP_DIR / "tools" / "judge0.py"
     judge0_modules = _imported_modules(judge0, _parse(judge0))
@@ -154,18 +198,106 @@ def test_only_judge0_imports_httpx() -> None:
     )
 
 
-def test_only_judge0_uses_the_httpx_module_object() -> None:
+def test_only_judge0_and_llm_adapters_use_the_httpx_module_object() -> None:
     """Docstring/comment mentions are fine; real ``httpx.X`` usage is not."""
     offenders = {}
     for path in _app_files():
         lines = _module_uses(_parse(path), "httpx")
-        if lines and _rel(path) != "tools/judge0.py":
+        if lines and not _may_import_httpx(_rel(path)):
             offenders[_rel(path)] = lines
 
     assert offenders == {}, (
-        f"httpx is used as a module outside tools/judge0.py: {offenders}"
+        f"httpx is used as a module outside tools/judge0.py or an LLM adapter: "
+        f"{offenders}"
     )
     assert _module_uses(_parse(APP_DIR / "tools" / "judge0.py"), "httpx")
+
+
+def test_llm_port_and_fake_never_import_httpx() -> None:
+    for name in (LLM_PORT_FILE, LLM_FAKE_FILE):
+        path = APP_DIR / name
+        tree = _parse(path)
+        modules = _imported_modules(path, tree)
+
+        assert not any(_is_module(m, "httpx") for m in modules), (
+            f"{name} imports httpx; only adapters may"
+        )
+        assert _module_uses(tree, "httpx") == [], (
+            f"{name} uses the httpx module; only adapters may"
+        )
+
+
+# ── 3b. LLM port / fake / adapter boundaries ─────────────────────────
+
+def test_llm_client_imports_only_stdlib_core_and_pydantic() -> None:
+    path = APP_DIR / "tools" / "llm_client.py"
+    modules = _imported_modules(path, _parse(path))
+
+    for module in modules:
+        if _is_stdlib(module):
+            continue
+        if _is_module(module, "app.core") or _is_module(module, "pydantic"):
+            continue
+        raise AssertionError(
+            f"llm_client.py imports '{module}': only stdlib, app.core "
+            f"and pydantic are allowed"
+        )
+
+    forbidden = [
+        m for m in modules
+        if _is_module(m, "app.tools")
+        or _is_module(m, "app.graph")
+        or _is_module(m, "httpx")
+        or _is_llm_sdk(m)
+    ]
+    assert forbidden == [], f"llm_client.py must not import {forbidden}"
+
+
+def test_fake_llm_imports_only_stdlib_and_llm_client() -> None:
+    path = APP_DIR / "tools" / "fake_llm.py"
+    modules = _imported_modules(path, _parse(path))
+
+    allowed_app = {"app.tools", "app.tools.llm_client"}
+    offenders = sorted(_app_imports(modules) - allowed_app)
+    assert offenders == [], (
+        f"fake_llm.py imports {offenders}; only llm_client is allowed"
+    )
+
+    non_stdlib = [m for m in modules if not _is_stdlib(m) and m not in allowed_app]
+    assert non_stdlib == [], f"fake_llm.py imports non-stdlib {non_stdlib}"
+    assert not any(_is_llm_sdk(m) for m in modules)
+
+
+def test_only_llm_adapters_import_an_llm_sdk() -> None:
+    offenders: dict[str, List[str]] = {}
+    for path in _app_files():
+        rel = _rel(path)
+        modules = _imported_modules(path, _parse(path))
+        sdks = sorted(m for m in modules if _is_llm_sdk(m))
+        if sdks and not _is_llm_adapter(rel):
+            offenders[rel] = sdks
+
+    assert offenders == {}, (
+        f"LLM SDKs imported outside tools/llm_<provider>.py: {offenders}"
+    )
+
+
+def test_llm_sdk_classifier_recognises_known_and_rejects_app_modules() -> None:
+    assert _is_llm_sdk("openai")
+    assert _is_llm_sdk("openai.resources.chat")
+    assert _is_llm_sdk("anthropic")
+    assert _is_llm_sdk("google.generativeai")
+    assert _is_llm_sdk("langchain_openai")
+    assert not _is_llm_sdk("httpx")
+    assert not _is_llm_sdk("app.tools.llm_client")
+    assert not _is_llm_sdk("openai_helpers")
+
+
+def test_llm_adapter_path_classifier() -> None:
+    assert _is_llm_adapter("tools/llm_openai.py")
+    assert not _is_llm_adapter("tools/llm_client.py")
+    assert not _is_llm_adapter("tools/fake_llm.py")
+    assert not _is_llm_adapter("tools/judge0.py")
 
 
 # ── 4. RapidAPI protocol confined to judge0.py ───────────────────────

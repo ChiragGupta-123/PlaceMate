@@ -12,6 +12,8 @@ SECURITY
   accessed only inside ``Judge0Sandbox`` at HTTP-send time.
 • A validator fails fast if ``sandbox_provider == "judge0"`` and the
   key is missing, with a clear, secret-free message.
+• ``llm_api_key`` is held as ``SecretStr`` too, and is only required
+  once a non-fake LLM provider is configured (Step 4.4).
 """
 
 from __future__ import annotations
@@ -40,6 +42,14 @@ class Settings(BaseSettings):
     judge0_rapidapi_key: SecretStr | None = None
     judge0_python_language_id: int = 71  # Python 3.8.1 on Judge0 CE
 
+    # ── LLM provider (Phase 4) ──────────────────────────────────────
+    llm_provider: str = "fake"  # "fake" today; real adapters land in 4.4
+    llm_model: str = "fake-model"
+    llm_connect_timeout_s: float = 5.0
+    llm_read_timeout_s: float = 30.0
+    llm_max_output_tokens: int = 1024
+    llm_api_key: SecretStr | None = None
+
     # ── HTTP timeouts ───────────────────────────────────────────────
     connect_timeout_s: float = 5.0
     read_timeout_s: float = 15.0
@@ -67,6 +77,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JUDGE0_RAPIDAPI_KEY must be set when SANDBOX_PROVIDER=judge0. "
                 "Get a free key at https://rapidapi.com/judge0-official/api/judge0-ce"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_llm_key(self) -> Settings:
+        if self.llm_provider != "fake" and not self.llm_api_key:
+            raise ValueError(
+                "LLM_API_KEY must be set when LLM_PROVIDER is not 'fake'."
             )
         return self
 
