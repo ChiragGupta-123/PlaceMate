@@ -115,28 +115,40 @@ def after_executor_router(state: dict) -> str:
     Decides where to go AFTER code execution.
 
     Returns one of:
-        "retry_input"  → back to human_input (unsupported lang / invalid)
-        "infra_error"  → to interviewer (sandbox failure, not candidate's fault)
+        "retry_input"  → back to human_input (unsupported lang / invalid /
+                         infra error while retries remain)
         "optimize"     → to debater (correct but slow, attempts remain)
         "probe"        → to debater (correct + fast, complexity probe)
         "pass"         → to interviewer (move on)
-        "exhausted"    → to interviewer (attempts used up, move on)
+        "exhausted"    → to interviewer (attempts used up, infra retries
+                         used up, or problem not evaluated)
         "fail"         → to debater (wrong answer / runtime error)
     """
-    from app.graph.constants import MAX_EXECUTION_ATTEMPTS, OPTIMIZATION_PROBE_MODES
+    from app.graph.constants import (
+        MAX_EXECUTION_ATTEMPTS,
+        MAX_INFRA_RETRIES,
+        OPTIMIZATION_PROBE_MODES,
+    )
 
     result = state.get("execution_result") or {}
     status = result.get("status", "failed")
-    attempts = state.get("execution_attempts", 0)
+    attempts = state.get("execution_attempts") or 0
+    infra_retries = state.get("infra_retries") or 0
     mode = state.get("interview_mode", "standard")
 
     # 1. Unsupported language or invalid submission → retry
     if status in ("unsupported_language", "invalid_submission"):
         return "retry_input"
 
-    # 2. Infrastructure error → not candidate's fault
+    # 2. Infrastructure error → retry while budget remains (D2)
     if status == "infra_error":
-        return "infra_error"
+        if infra_retries <= MAX_INFRA_RETRIES:
+            return "retry_input"
+        return "exhausted"
+
+    # 2b. Retry budget used up → move on, not the candidate's fault
+    if status == "not_evaluated":
+        return "exhausted"
 
     # 3. Passed
     if status == "passed":

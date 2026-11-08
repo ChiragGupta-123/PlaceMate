@@ -125,8 +125,7 @@ def build_interview_graph(
         after_executor_router,
         {
             "pass": interviewer,         # correct → next question
-            "exhausted": interviewer,    # attempts used up → move on
-            "infra_error": interviewer,  # sandbox failure → not candidate fault
+            "exhausted": interviewer,    # attempts/infra budget used up
             "fail": debater,             # wrong answer / error → challenge
             "optimize": debater,         # correct but slow → complexity challenge
             "probe": debater,            # correct + fast → probe complexity

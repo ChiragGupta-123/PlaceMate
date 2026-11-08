@@ -74,6 +74,7 @@ class InterviewState(TypedDict, total=False):
     # ── 6. Code execution ───────────────────────────────────────────
     current_problem_id: str | None
     execution_attempts: int
+    infra_retries: int
     execution_result: dict[str, Any] | None
     execution_history: Annotated[list[dict[str, Any]], operator.add]
     optimization_probe_done: bool

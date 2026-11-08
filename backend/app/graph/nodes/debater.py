@@ -63,27 +63,44 @@ def debater_node(state: dict) -> dict:
     """
 
     execution_result: dict | None = state.get("execution_result")
-    code = state.get("code_submission", "")
-    follow_up_count: int = state.get("follow_up_count", 0)
+    follow_up_count: int = state.get("follow_up_count") or 0
+    status = execution_result.get("status") if execution_result else None
+    error = (execution_result or {}).get("error") or "unknown error"
 
     # ── Generate mock challenge ─────────────────────────────────────
-    if execution_result and execution_result.get("status") == "partial":
-        # Inefficient solution — challenge on complexity
+    probe_done = False
+    if status == "passed":
+        # Correct solution → ask the complexity probe exactly once.
+        # The router guards this with optimization_probe_done, so the
+        # debater is responsible for setting the flag.
+        probe_done = True
+        if execution_result is not None and execution_result.get("perf_ok") is False:
+            challenge = (
+                "Your solution passes every test case, but it is too slow on "
+                "the largest inputs. It appears to be O(N²) due to nested "
+                "loops.\n\n"
+                "💡 Can you think of a way to solve this in O(N) time? "
+                "Hint: consider what data structure could help you look up "
+                "values in constant time.\n\n"
+                "Please revise your solution and resubmit."
+            )
+            analysis = (
+                "Correct but over the perf budget. Detected O(N²) pattern; "
+                "likely needs hash map optimization."
+            )
+        else:
+            challenge = (
+                "Your solution is correct and within the performance budget. "
+                "Before we move on, let's probe the design:\n"
+                "- What is the time complexity, and why?\n"
+                "- What is the space complexity?\n"
+                "- Which input shape is the worst case for your approach?"
+            )
+            analysis = "Correct and performant. Complexity probe requested."
+    elif status == "failed":
+        # Wrong answer — ask about the approach
         challenge = (
-            "I notice your solution works for small inputs but times out "
-            "on larger test cases. It appears to be O(N²) due to nested "
-            "loops.\n\n"
-            "💡 Can you think of a way to solve this in O(N) time? "
-            "Hint: consider what data structure could help you look up "
-            "values in constant time.\n\n"
-            "Please revise your solution and resubmit."
-        )
-        analysis = "Detected O(N²) nested loop pattern. Likely needs hash map optimization."
-    elif execution_result and execution_result.get("status") == "fail":
-        # Failed execution — ask about approach
-        error = execution_result.get("error", "unknown error")
-        challenge = (
-            f"Your code encountered an error: {error}\n\n"
+            f"Your code produced an incorrect result: {error}\n\n"
             "Let's step back. Can you walk me through your approach "
             "before we look at the code?\n"
             "- What data structure are you using?\n"
@@ -92,7 +109,42 @@ def debater_node(state: dict) -> dict:
             "Take a moment to think, then you can either explain "
             "your approach or resubmit corrected code."
         )
-        analysis = f"Code failed with: {error}. Candidate needs to debug."
+        analysis = f"Wrong answer: {error}. Candidate needs to revisit the approach."
+    elif status == "compile_error":
+        challenge = (
+            f"Your code did not compile: {error}\n\n"
+            "Let's fix the syntax first. Check the reported line, then "
+            "resubmit. If the message is unclear, walk me through the code "
+            "line by line."
+        )
+        analysis = f"Compile error: {error}."
+    elif status == "runtime_error":
+        challenge = (
+            f"Your code hit a runtime error: {error}\n\n"
+            "That means the program started but stopped unexpectedly. "
+            "Which input triggers it, and what assumption does your code "
+            "make that might not hold?\n\n"
+            "Please fix it and resubmit."
+        )
+        analysis = f"Runtime error: {error}. Candidate needs to debug."
+    elif status == "time_limit_exceeded":
+        challenge = (
+            "Your solution exceeded the time limit on the larger test cases. "
+            "That usually means the algorithm is O(N²) or worse.\n\n"
+            "💡 Can you think of a way to solve this in O(N) time? "
+            "What data structure would let you avoid the nested loop?\n\n"
+            "Please revise your solution and resubmit."
+        )
+        analysis = "Time limit exceeded. Likely O(N²) or worse; needs optimization."
+    elif status == "memory_limit_exceeded":
+        challenge = (
+            "Your solution exceeded the memory limit. It is using more space "
+            "than the problem allows.\n\n"
+            "- Which data structures hold the most data?\n"
+            "- Can you process the input in a single pass instead of storing it?\n\n"
+            "Please revise your solution and resubmit."
+        )
+        analysis = "Memory limit exceeded. Candidate needs to reduce space usage."
     else:
         # Generic follow-up (shouldn't normally reach here in Phase 1)
         challenge = (
@@ -106,7 +158,7 @@ def debater_node(state: dict) -> dict:
 
     ai_message = AIMessage(content=f"[Debater] {challenge}")
 
-    return {
+    delta: dict = {
         "complexity_analysis": analysis,
         "follow_up_count": follow_up_count + 1,
         "current_question": challenge,
@@ -114,3 +166,6 @@ def debater_node(state: dict) -> dict:
         "is_follow_up_pass_through": True,
         "messages": [ai_message],
     }
+    if probe_done:
+        delta["optimization_probe_done"] = True
+    return delta

@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.graph.constants import MAX_EXECUTION_ATTEMPTS, OPTIMIZATION_PROBE_MODES
+from app.graph.constants import (
+    MAX_EXECUTION_ATTEMPTS,
+    MAX_INFRA_RETRIES,
+    OPTIMIZATION_PROBE_MODES,
+)
 from app.graph.edges.routers import after_executor_router, after_human_input_router
 
 
@@ -23,6 +27,7 @@ def _exec_state(
     attempts: int = 1,
     mode: str = "standard",
     probe_done: bool = False,
+    infra_retries: int = 0,
     result_override: dict | None = None,
 ) -> dict:
     result = result_override if result_override is not None else {
@@ -32,6 +37,7 @@ def _exec_state(
     return {
         "execution_result": result,
         "execution_attempts": attempts,
+        "infra_retries": infra_retries,
         "interview_mode": mode,
         "optimization_probe_done": probe_done,
     }
@@ -56,11 +62,24 @@ class TestAfterExecutorRouter:
             _exec_state(status="invalid_submission")
         ) == "retry_input"
 
-    # ── infra error ─────────────────────────────────────────────────
-    def test_infra_error_returns_infra_error(self) -> None:
+    # ── infra error (D2: retry after 1st and 2nd, then move on) ─────
+    @pytest.mark.parametrize("retries", [0, 1, MAX_INFRA_RETRIES])
+    def test_infra_error_within_retry_budget_returns_retry_input(
+        self, retries: int
+    ) -> None:
         assert after_executor_router(
-            _exec_state(status="infra_error")
-        ) == "infra_error"
+            _exec_state(status="infra_error", infra_retries=retries)
+        ) == "retry_input"
+
+    def test_third_infra_error_returns_exhausted(self) -> None:
+        assert after_executor_router(
+            _exec_state(status="infra_error", infra_retries=MAX_INFRA_RETRIES + 1)
+        ) == "exhausted"
+
+    def test_not_evaluated_returns_exhausted(self) -> None:
+        assert after_executor_router(
+            _exec_state(status="not_evaluated", infra_retries=MAX_INFRA_RETRIES + 1)
+        ) == "exhausted"
 
     # ── passed + perf ────────────────────────────────────────────────
     def test_passed_perf_ok_standard_probes_once(self) -> None:

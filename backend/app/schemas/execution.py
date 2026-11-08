@@ -40,6 +40,7 @@ class ExecutionStatus(str, Enum):
     runtime_error = "runtime_error"
     time_limit_exceeded = "time_limit_exceeded"
     memory_limit_exceeded = "memory_limit_exceeded"
+    not_evaluated = "not_evaluated"
     infra_error = "infra_error"
     unsupported_language = "unsupported_language"
     invalid_submission = "invalid_submission"

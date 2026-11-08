@@ -83,14 +83,23 @@ def assessor_node(state: dict) -> dict:
     role: str = state.get("target_role", "Software Engineer")
 
     # ── Calculate mock scores ───────────────────────────────────────
-    has_code = bool(state.get("code_submission"))
+    # Only evaluated runs count.  infra_error and not_evaluated are not the
+    # candidate's fault and must never lower the score (D2).
+    evaluated: list = [
+        r for r in execution_history
+        if r.get("status") not in ("infra_error", "not_evaluated")
+    ]
+    # If every coding run was unscoreable (D2), the candidate must not be
+    # penalised: exclude code_correctness from the weighted total instead.
+    code_not_scored = bool(execution_history) and not evaluated
+    has_code = bool(state.get("code_submission")) and bool(evaluated)
     any_pass = any(
-        r.get("status") in ("pass", "partial")
-        for r in execution_history
+        r.get("status") == "passed"
+        for r in evaluated
     )
     all_pass = any(
-        r.get("status") == "pass"
-        for r in execution_history
+        r.get("status") == "passed"
+        for r in evaluated
     )
 
     # Mock scoring heuristic
@@ -112,7 +121,14 @@ def assessor_node(state: dict) -> dict:
             # Default: 60% for having participated
             rubric_scores[category] = max_score * 0.6 if total_turns > 0 else 0.0
 
-    total_score = sum(rubric_scores.values())
+    if code_not_scored:
+        total_weight = sum(RUBRIC_CATEGORIES.values())
+        excluded_weight = RUBRIC_CATEGORIES["code_correctness"]
+        total_score = (
+            sum(rubric_scores.values()) / (total_weight - excluded_weight) * 100.0
+        )
+    else:
+        total_score = sum(rubric_scores.values())
 
     # ── Determine verdict ───────────────────────────────────────────
     if total_score >= 80:
@@ -133,7 +149,7 @@ def assessor_node(state: dict) -> dict:
     if any_pass and not all_pass:
         strengths.append("Partial solution shows problem-solving ability")
         weaknesses.append("Solution does not handle all edge cases")
-    if not has_code:
+    if not has_code and not code_not_scored:
         weaknesses.append("No code submission provided")
 
     if total_turns <= 2:
@@ -150,7 +166,13 @@ def assessor_node(state: dict) -> dict:
     )
     for cat, score in rubric_scores.items():
         max_s = RUBRIC_CATEGORIES[cat]
-        feedback += f"  {cat.replace('_', ' ').title():.<30} {score:.1f} / {max_s:.1f}\n"
+        if code_not_scored and cat == "code_correctness":
+            feedback += (
+                f"  {cat.replace('_', ' ').title():.<30} "
+                "not scored (technical problem)\n"
+            )
+        else:
+            feedback += f"  {cat.replace('_', ' ').title():.<30} {score:.1f} / {max_s:.1f}\n"
 
     feedback += f"\nStrengths: {', '.join(strengths) if strengths else 'N/A'}\n"
     feedback += f"Areas for Improvement: {', '.join(weaknesses) if weaknesses else 'N/A'}\n"
