@@ -35,6 +35,31 @@ def test_factory_does_not_share_mutable_defaults():
     assert b["messages"] == [] and b["execution_history"] == []
 
 
+def test_question_service_state_fields_exist_with_safe_defaults():
+    hints = typing.get_type_hints(InterviewState, include_extras=True)
+    for key in ("llm_calls", "interview_summary", "covered_topics", "asked_problem_ids"):
+        assert key in hints, f"missing state field: {key}"
+
+    state = make_initial_state(
+        session_id="s", candidate_name="c", target_company="x", target_role="y"
+    )
+    assert state["llm_calls"] == 0
+    assert state["interview_summary"] == ""
+    assert state["covered_topics"] == []
+    assert state["asked_problem_ids"] == []
+
+
+def test_question_service_lists_are_not_shared_between_states():
+    a = make_initial_state(session_id="a", candidate_name="c", target_company="x", target_role="y")
+    b = make_initial_state(session_id="b", candidate_name="c", target_company="x", target_role="y")
+
+    a["covered_topics"].append("hash tables")
+    a["asked_problem_ids"].append("two_sum")
+
+    assert b["covered_topics"] == []
+    assert b["asked_problem_ids"] == []
+
+
 def test_no_debug_agent_log_blocks():
     """Regression test for B10: production code must never contain debug agent log blocks."""
     app_dir = Path(__file__).resolve().parents[2] / "app"

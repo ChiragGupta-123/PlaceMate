@@ -66,6 +66,12 @@ class InterviewState(TypedDict, total=False):
     current_question: str
     current_question_type: str | None        # QuestionType value
 
+    # ── 4b. Interviewer LLM bookkeeping (Step 4.3) ──────────────────
+    llm_calls: int                           # session-wide LLM call cap
+    interview_summary: str                   # deterministic rolling summary
+    covered_topics: list[str]                # topics already asked
+    asked_problem_ids: list[str]             # coding ids already used
+
     # ── 5. Candidate response ───────────────────────────────────────
     candidate_answer: str
     code_submission: str
@@ -130,6 +136,10 @@ def make_initial_state(
         "phases_completed": [],
         "current_question": "",
         "current_question_type": None,
+        "llm_calls": 0,
+        "interview_summary": "",
+        "covered_topics": [],
+        "asked_problem_ids": [],
         "candidate_answer": "",
         "code_submission": "",
         "code_language": "python",

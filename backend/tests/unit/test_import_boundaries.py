@@ -345,6 +345,18 @@ def test_graph_does_not_import_tools_or_httpx() -> None:
         assert uses == [], f"{_rel(path)} uses the httpx module at lines {uses}"
 
 
+# ── 5b. app/services never reaches into app/graph ────────────────────
+
+def test_services_do_not_import_graph() -> None:
+    service_files = sorted((APP_DIR / "services").rglob("*.py"))
+    assert service_files, "no files under app/services"
+
+    for path in service_files:
+        modules = _imported_modules(path, _parse(path))
+        bad = [m for m in modules if _is_module(m, "app.graph")]
+        assert bad == [], f"{_rel(path)} imports {bad} (layering violation)"
+
+
 # ── 6. no dynamic code execution anywhere under app/ ────────────────
 
 def _banned_calls(tree: ast.Module) -> List[str]:

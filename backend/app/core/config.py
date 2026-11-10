@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     llm_max_output_tokens: int = 1024
     llm_api_key: SecretStr | None = None
 
+    # ── Interviewer question source (Phase 4) ───────────────────────
+    # "mock" keeps the deterministic Phase-1 bank (default, no key needed).
+    # "llm" builds the provider at startup and fails fast if it is invalid.
+    question_source: str = "mock"
+
     # ── HTTP timeouts ───────────────────────────────────────────────
     connect_timeout_s: float = 5.0
     read_timeout_s: float = 15.0

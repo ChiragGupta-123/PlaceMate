@@ -285,6 +285,45 @@ def parse_question_draft(
     return draft
 
 
+# ── Deterministic rolling summary (Step 4.3) ─────────────────────────
+
+def update_interview_summary(
+    existing: str,
+    question: str,
+    answer: str,
+    *,
+    max_chars: int = MAX_SUMMARY_CHARS,
+) -> str:
+    """Append one Q/A turn to the rolling summary — no LLM call.
+
+    The summary is untrusted-ish text: newlines are collapsed and the
+    prompt-structure tags are escaped, so a hostile answer can never close
+    the ``<rolling_summary>`` block it is rendered into.
+
+    When the summary exceeds ``max_chars`` the OLDEST lines are dropped;
+    the newest text always survives.
+    """
+    if max_chars <= 0:
+        return ""
+
+    question_text = _escape_tags(_one_line(question, MAX_QUESTION_TURN_CHARS))
+    if not question_text:
+        return existing
+
+    answer_text = _escape_tags(_one_line(answer, MAX_ANSWER_CHARS))
+    lines = [line for line in existing.splitlines() if line.strip()]
+    lines.append(f"Q: {question_text} | A: {answer_text}")
+
+    summary = "\n".join(lines)
+    while len(summary) > max_chars and len(lines) > 1:
+        lines.pop(0)
+        summary = "\n".join(lines)
+
+    if len(summary) > max_chars:
+        summary = summary[-max_chars:]
+    return summary
+
+
 # ── Internal: system prompt ──────────────────────────────────────────
 
 def _build_system_prompt(
